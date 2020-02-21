@@ -1,0 +1,7 @@
+version: "3"
+services:
+  cockroachdb:
+    image: cockroachdb/cockroach:v19.2.4
+    command: start --insecure
+    ports:
+      - "43430:26257"

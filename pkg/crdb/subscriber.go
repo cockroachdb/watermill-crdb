@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"time"
 	"strconv"
+	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
@@ -129,7 +129,7 @@ func (s *subscriber) Subscribe(ctx context.Context, topic string) (<-chan *messa
 	<-session.Start
 
 	logger := s.logger.With(watermill.LogFields{
-		"topic": topic,
+		"topic":   topic,
 		"session": session.SessionID,
 	})
 
@@ -138,14 +138,13 @@ func (s *subscriber) Subscribe(ctx context.Context, topic string) (<-chan *messa
 		defer cancel()
 
 		logger.Info("subscribing", watermill.LogFields{
-			"cursor": 0,
+			"cursor": cursor,
 		})
 
 		err := s.consume(ctx, rows, topic, session, out, logger)
 
 		logger.Debug("subscription closed", watermill.LogFields{
-			"cursor": 0,
-			"err": err,
+			"err":    err,
 		})
 
 		// swallow errors if ctx has been canceled
@@ -188,11 +187,11 @@ func (s *subscriber) Cursor(ctx context.Context, tx *sql.Tx, topic string) (time
 
 func (s *subscriber) MissedMessageIDs(ctx context.Context, session *Session, tx *sql.Tx, topic string, cursor time.Time) ([]string, error) {
 	query := fmt.Sprintf(`SELECT msg.ID FROM %s msg
-		WHERE msg.consumer_after <= $1
+		WHERE msg.consume_after <= $1
 		AND NOT EXISTS (
 			SELECT * FROM %s claim
 			WHERE claim.acked IS NULL
-			AND claim.message_id = mesg.ID
+			AND claim.message_id = msg.ID
 			AND NOT EXISTS (
 				SELECT * FROM %s session WHERE session.id = claim.session_id
 			)
@@ -234,15 +233,20 @@ func (s *subscriber) consume(
 			return err
 		}
 
-		logger.Trace("recieved change", watermill.LogFields{
-			"key": key.String,
-			"value": value,
-		})
-
+		var timestamp time.Time
 		var messageID string
 
-		// resolved timestamp
-		if !table.Valid {
+		// Is this a resolve timestamp or an actual change?
+		isChange := table.Valid
+
+		// unmarshal either the timestamp envelope or changed row ID
+		if isChange {
+			var ids []string
+			if err := json.Unmarshal([]byte(key.String), &ids); err != nil {
+				return err
+			}
+			messageID = ids[0]
+		} else {
 			var env CRDBEnvelope
 			if err := json.Unmarshal([]byte(value), &env); err != nil {
 				return err
@@ -253,96 +257,47 @@ func (s *subscriber) consume(
 				return err
 			}
 
-			// crdb.ExecuteTx(ctx, s.db, nil, func(tx *sql.Tx) error {
-			// 	missed, err := s.MissedMessageIDs(ctx, session, tx, topic, cursor)
-			// })
-
-			// messageID, cursor, err = s.updateCursor(ctx, s.db, session, topic, time.Unix(0, int64(ts)))
-			// if err != nil {
-			// 	return err
-			// }
-
-			cursor = time.Unix(0, int64(ts))
-
-			continue
+			timestamp = time.Unix(0, int64(ts))
 		}
-		var ids []string
-		if err := json.Unmarshal([]byte(key.String), &ids); err != nil {
-			return err
-		}
-		messageID = ids[0]
 
-		// if messageID == "" {
-		// 	continue
-		// }
-
-		var msgConsumeAfter time.Time
-		var msgMeta string
-		var msgPayload []byte
-		var msgUUID string
-
+		var claimed *message.Message
 		if err := crdb.ExecuteTx(ctx, s.db, nil, func(tx *sql.Tx) error {
-			// Reset our variable as this tx may retry
-			msgConsumeAfter = time.Time{}
-			msgMeta = ""
-			msgPayload = []byte{}
-			msgUUID = ""
+			var err error
+			claimed = nil
 
-			query := fmt.Sprintf(`SELECT msg.message_id, msg.payload, msg.meta, msg.consume_after FROM
-			%[1]s msg
-			LEFT JOIN %[2]s ack ON ack.message_id = msg.id
-			WHERE msg.id = $1
-			AND ack.acked IS NULL
-			AND NOT EXISTS (
-				SELECT * FROM %[3]s WHERE id = ack.session_id
-			);`, messageTable(topic), claimsTable(topic, s.consumerGroup), session.TableName())
-
-			row := tx.QueryRowContext(ctx, query, messageID)
-
-			if err := row.Scan(&msgUUID, &msgPayload, &msgMeta, &msgConsumeAfter); err != nil && err != sql.ErrNoRows {
+			if isChange {
+				claimed, err = s.claimMessage(ctx, session, tx, topic, messageID)
 				return err
 			}
 
-			// no messages available
-			if msgUUID == "" {
-				return nil
-			}
-
-			logger.Debug( "recieved message", watermill.LogFields{
-				"cursor": cursor,
-				"message_id": msgUUID,
-				"latency": time.Now().Sub(msgConsumeAfter),
-			})
-
-			if err := session.Observe(ctx, tx); err != nil {
+			missed, err := s.MissedMessageIDs(ctx, session, tx, topic, timestamp)
+			if err != nil {
 				return err
 			}
 
-			claimQuery := fmt.Sprintf(`
-			INSERT INTO %s(message_id, session_id, acked)
-			VALUES ($1, $2, NULL)
-			ON CONFLICT (message_id)
-			DO UPDATE SET session_id = excluded.session_id
-			`, claimsTable(topic, s.consumerGroup))
+			// If no missed messages exist, update our group's cursor
+			if len(missed) == 0 {
+				return s.SetCursor(ctx, tx, topic, timestamp)
+			}
 
-			_, err := tx.ExecContext(ctx, claimQuery, messageID, session.SessionID)
+			claimed, err = s.claimMessage(ctx, session, tx, topic, missed[0])
 
 			return err
 		}); err != nil {
 			return err
 		}
 
-		// no messages available
-		if msgUUID == "" {
+		// Upgrade timestamp to our cursor if there are no missed messages
+		if claimed == nil && !timestamp.IsZero() {
+			cursor = timestamp
+		}
+
+		// No messages available
+		if claimed == nil {
 			continue
 		}
 
-		msg := message.NewMessage(msgUUID, msgPayload)
-		if err := json.Unmarshal([]byte(msgMeta), &msg.Metadata); err != nil {
-			return err
-		}
-
-		if acked := s.sendMessage(ctx, msg, out, logger); acked {
+		if acked := s.sendMessage(ctx, claimed, out, logger); acked {
 			result, err := s.db.ExecContext(
 				ctx,
 				fmt.Sprintf(`UPDATE %s SET acked = NOW() WHERE message_id = $1 AND session_id = $2`, claimsTable(topic, s.consumerGroup)),
@@ -356,9 +311,9 @@ func (s *subscriber) consume(
 			rowsAffected, _ := result.RowsAffected()
 
 			logger.Debug("acked message", watermill.LogFields{
-				"message_id": msg.UUID,
+				"message_id":    claimed.UUID,
 				"rows_affected": rowsAffected,
-				"cursor": cursor,
+				"cursor":        cursor,
 			})
 		}
 	}
@@ -422,59 +377,6 @@ func (s *subscriber) claimMessage(ctx context.Context, session *Session, tx *sql
 
 	return msg, nil
 }
-
-// func (s *subscriber) updateCursor(
-// 	ctx context.Context,
-// 	db *sql.DB,
-// 	session *Session,
-// 	topic string,
-// 	cursor time.Time,
-// ) (string, time.Time, error) {
-// 	var msgID string
-// 	if err := crdb.ExecuteTx(ctx, db, nil, func(tx *sql.Tx) error {
-// 		msgID = ""
-
-// 		unAckedMessages := fmt.Sprintf(`SELECT msg.* FROM %[1]s msg
-// 		LEFT JOIN %[2]s claim ON claim.message_id = msg.id
-// 		WHERE claim.acked IS NULL
-// 		AND msg.consume_after < $1
-// 		AND NOT EXISTS (
-// 			SELECT * FROM %[3]s WHERE id = claim.session_id
-// 		);`, s.messagesTable(topic), s.claimsTable(topic), session.TableName())
-
-// 		rows, err := tx.QueryContext(ctx, unAckedMessages, cursor)
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		var messages []msg
-// 		if err := sqlx.StructScan(rows, &messages); err != nil {
-// 			return err
-// 		}
-
-// 		// Unprocessed messages exist, we need to proccess them
-// 		if len(messages) > 0 {
-// 			s.logger.Info("found unproccessed messages", zap.Any("msgs", messages))
-// 			msgID = messages[0].ID.String()
-// 			return nil
-// 		}
-
-// 		// No unacked messages exist, we can safely write our latest resolved timestamp/checkpoint
-// 		updateQuery := fmt.Sprintf(`INSERT INTO %s (topic, consumer_group, resolved_timestamp)
-// 		VALUES ($1, $2, $3)
-// 		ON CONFLICT (topic, consumer_group)
-// 		DO UPDATE SET resolved_timestamp = excluded.resolved_timestamp;`, s.cursorsTable())
-
-// 		// TODO check rows affected
-// 		_, err = tx.ExecContext(ctx, updateQuery, topic, s.consumerGroup, cursor)
-
-// 		return err
-// 	}); err != nil {
-// 		return "", time.Time{}, err
-// 	}
-
-// 	return msgID, cursor, nil
-// }
 
 func (s *subscriber) sendMessage(
 	ctx context.Context,

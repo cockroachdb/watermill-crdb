@@ -2,8 +2,8 @@ package crdb
 
 import (
 	"fmt"
-	"time"
 	"regexp"
+	"time"
 
 	"github.com/pkg/errors"
 )
@@ -32,7 +32,7 @@ func claimsTable(topic string, consumerGroup string) string {
 
 func ChangeFeedQuery(topic string, resolved time.Duration, cursor time.Time) string {
 	query := fmt.Sprintf(
-		`EXPERIMENTAL CHANGEFEED FOR %s WITH format = json, resolved = %s, envelope = key_only`,
+		`EXPERIMENTAL CHANGEFEED FOR %s WITH format = json, resolved = '%s', envelope = key_only`,
 		messageTable(topic),
 		resolved.String(),
 	)

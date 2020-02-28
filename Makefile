@@ -1,4 +1,4 @@
-.PHONY: lint format test-short
+.PHONY: lint format test-short sql-shell
 
 test-short:
 	docker-compose down
@@ -10,11 +10,9 @@ format:
 
 lint:
 	golangci-lint run \
-		-E misspell \
-		-E rowserrcheck \
-		-E wsl \
 		-E gocritic \
-		-E maligned
+		-E misspell \
+		-E wsl
 
 sql-shell:
-	docker-compose exec cockroachdb -- ./cockroach sql --insecure
+	docker-compose exec cockroachdb ./cockroach sql --insecure

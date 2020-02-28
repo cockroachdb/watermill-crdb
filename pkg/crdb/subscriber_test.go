@@ -14,20 +14,23 @@ import (
 
 func TestSubscriberMissedMessages(t *testing.T) {
 	topic := watermill.NewUUID()
-	logger := watermill.NewStdLogger(true, true)
+	logger := watermill.NewStdLogger(true, testing.Verbose())
 
 	config, err := pgx.ParseConfig("postgres://root@localhost:43430/defaultdb?sslmode=disable")
 	require.NoError(t, err)
 
 	conn := stdlib.OpenDB(*config)
 
-	pub := NewPublisher(conn, logger)
-	sub := NewSubscriber(conn, "group", logger)
-
-	require.NoError(t, sub.SubscribeInitialize(topic))
-
 	t.Run(topic, func(t *testing.T) {
 		t.Run("missedMessage", func(t *testing.T) {
+			pub := NewPublisher(conn, logger)
+			sub := NewSubscriber(conn, "group", logger)
+
+			defer pub.Close()
+			defer sub.Close()
+
+			require.NoError(t, sub.SubscribeInitialize(topic))
+
 			missedMessageID := watermill.NewUUID()
 
 			require.NoError(t, pub.Publish(
@@ -46,17 +49,14 @@ func TestSubscriberMissedMessages(t *testing.T) {
 
 			require.NoError(t, tx.Commit())
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			out, err := sub.Subscribe(ctx, topic)
+			out, err := sub.Subscribe(context.Background(), topic)
 			require.NoError(t, err)
 
 			select {
 			case msg := <-out:
 				require.NotNil(t, msg)
 				require.Equal(t, missedMessageID, msg.UUID)
-				msg.Ack()
+				require.True(t, msg.Ack())
 
 			case <-time.After(5 * time.Second):
 				require.FailNow(t, "old message not picked up")
@@ -64,6 +64,14 @@ func TestSubscriberMissedMessages(t *testing.T) {
 		})
 
 		t.Run("abandonedMessage", func(t *testing.T) {
+			pub := NewPublisher(conn, logger)
+			sub := NewSubscriber(conn, "group", logger)
+
+			defer pub.Close()
+			defer sub.Close()
+
+			require.NoError(t, sub.SubscribeInitialize(topic))
+
 			abandonedCtx, cancel := context.WithCancel(context.Background())
 			abandonedMessageID := watermill.NewUUID()
 
@@ -115,14 +123,11 @@ func TestSubscriberMissedMessages(t *testing.T) {
 			}
 		})
 	})
-
-	require.NoError(t, pub.Close())
-	require.NoError(t, sub.Close())
 }
 
 func TestConsumeAfter(t *testing.T) {
 	topic := watermill.NewUUID()
-	logger := watermill.NewStdLogger(true, true)
+	logger := watermill.NewStdLogger(true, testing.Verbose())
 
 	config, err := pgx.ParseConfig("postgres://root@localhost:43430/defaultdb?sslmode=disable")
 	require.NoError(t, err)

@@ -323,7 +323,7 @@ func (s *subscriber) consume(
 			continue
 		}
 
-		logger.Debug("dispatching message", watermill.LogFields{
+		logger.Trace("dispatching message", watermill.LogFields{
 			"cursor": cursor,
 			"message_id": claimed.Msg.UUID,
 			"latency": time.Now().Sub(claimed.ConsumeAfter),
@@ -331,8 +331,8 @@ func (s *subscriber) consume(
 		})
 
 		if acked := s.sendMessage(ctx, claimed, out, logger); acked {
-			result, err := s.db.ExecContext(
-				ctx,
+			// Note: ack'ing is not cancellable by ctx
+			result, err := s.db.Exec(
 				fmt.Sprintf(`UPDATE %s SET acked = NOW() WHERE message_id = $1 AND session_id = $2`, claimsTable(topic, s.consumerGroup)),
 				claimed.ID,
 				session.SessionID,
@@ -343,7 +343,7 @@ func (s *subscriber) consume(
 
 			rowsAffected, _ := result.RowsAffected()
 
-			logger.Debug("acked message", watermill.LogFields{
+			logger.Trace("acked message", watermill.LogFields{
 				"internal_id":    claimed.ID,
 				"message_id":    claimed.Msg.UUID,
 				"rows_affected": rowsAffected,
@@ -440,8 +440,14 @@ func (s *subscriber) sendMessage(
 			}
 
 		case <-ctx.Done():
-			logger.Info("Discarding queued message, context canceled", nil)
-			return false
+			// handle the strange race condition where ctx is cancelled at the same time msg is acked
+			select {
+			case <-msg.Acked():
+				return true
+			default:
+				logger.Info("Discarding queued message, context canceled", nil)
+				return false
+			}
 		}
 	}
 }

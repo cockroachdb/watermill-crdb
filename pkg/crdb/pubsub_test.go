@@ -14,7 +14,7 @@ import (
 )
 
 func PubSubConstructor(t *testing.T, conn *sql.DB, consumerGroup string) (message.Publisher, message.Subscriber) {
-	logger := watermill.NewStdLogger(true, true)
+	logger := watermill.NewStdLogger(true, testing.Verbose())
 
 	publisher := crdb.NewPublisher(conn, logger)
 	subscriber := crdb.NewSubscriber(conn, consumerGroup, logger)

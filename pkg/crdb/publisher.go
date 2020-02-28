@@ -17,6 +17,7 @@ import (
 var ErrPublisherClosed = errors.New("publisher is closed")
 
 type DB interface {
+	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
 }
 
 type PublisherConfig struct {
@@ -29,12 +30,12 @@ type publisher struct {
 	closed             bool
 	closing            chan struct{}
 	initializedSchemas sync.Map
-	conn               *sql.DB
+	conn               DB
 }
 
 var _ message.Publisher = &publisher{}
 
-func NewPublisher(conn *sql.DB, logger watermill.LoggerAdapter) *publisher {
+func NewPublisher(conn DB, logger watermill.LoggerAdapter) *publisher {
 	if logger == nil {
 		logger = watermill.NopLogger{}
 	}
@@ -48,13 +49,18 @@ func NewPublisher(conn *sql.DB, logger watermill.LoggerAdapter) *publisher {
 }
 
 func (p *publisher) initializeSchema(topic string) error {
+	db, ok := p.conn.(*sql.DB)
+	if !ok {
+		return nil
+	}
+
 	if _, ok := p.initializedSchemas.Load(topic); ok {
 		return nil
 	}
 
 	p.initializedSchemas.Store(topic, true)
 
-	if err := InitializeMessageSchema(context.Background(), p.conn, topic, p.logger); err != nil {
+	if err := InitializeMessageSchema(context.Background(), db, topic, p.logger); err != nil {
 		return err
 	}
 
@@ -85,7 +91,7 @@ func (p *publisher) PublishAt(topic string, consumeAfter time.Time, messages ...
 	ctx := context.Background()
 	publishedAt := time.Now()
 
-	return crdb.ExecuteTx(ctx, p.conn, nil, func(tx *sql.Tx) error {
+	return ensureTx(ctx, p.conn, func(tx DB) error {
 		// TODO bulk insert is more efficient
 		for _, m := range messages {
 			meta, err := json.Marshal(m.Metadata)
@@ -126,4 +132,17 @@ func (p *publisher) Close() error {
 	p.pending.Wait()
 
 	return nil
+}
+
+// ensureTx executes cb via crdb.ExecuteTx, if db is a *sql.DB. Otherwise cb is executed normally
+func ensureTx(ctx context.Context, db DB, cb func(tx DB) error) error {
+	sqlDB, ok := db.(*sql.DB)
+
+	if !ok {
+		return cb(db)
+	}
+
+	return crdb.ExecuteTx(ctx, sqlDB, nil, func(tx *sql.Tx) error {
+		return cb(tx)
+	})
 }

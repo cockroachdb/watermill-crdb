@@ -16,6 +16,9 @@ import (
 
 var ErrPublisherClosed = errors.New("publisher is closed")
 
+type DB interface {
+}
+
 type PublisherConfig struct {
 	AutoInitializeSchema bool
 }
@@ -62,6 +65,7 @@ func (p *publisher) Publish(topic string, messages ...*message.Message) error {
 	return p.PublishAt(topic, time.Now(), messages...)
 }
 
+// PublishAt persists messages to CRDB but schedules them to be consumed after the specified time.Time
 func (p *publisher) PublishAt(topic string, consumeAfter time.Time, messages ...*message.Message) error {
 	if p.closed {
 		return ErrPublisherClosed
@@ -95,7 +99,7 @@ func (p *publisher) PublishAt(topic string, consumeAfter time.Time, messages ...
 
 			insertQuery := fmt.Sprintf(`
 				INSERT INTO %s (id, message_id, payload, meta, published_at, consume_after)
-				VALUES (DEFAULT, $1, $2, $3, $5, $4)
+				VALUES (DEFAULT, $1, $2, $3, $4, $5)
 			`, messageTable(topic))
 
 			_, err = tx.ExecContext(ctx, insertQuery, m.UUID, m.Payload, meta, publishedAt, consumeAfter)

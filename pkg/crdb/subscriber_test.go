@@ -120,6 +120,43 @@ func TestSubscriberMissedMessages(t *testing.T) {
 	require.NoError(t, sub.Close())
 }
 
-// func TestConsumeAfter(t *testing.T) {
+func TestConsumeAfter(t *testing.T) {
+	topic := watermill.NewUUID()
+	logger := watermill.NewStdLogger(true, true)
 
-// }
+	config, err := pgx.ParseConfig("postgres://root@localhost:43430/defaultdb?sslmode=disable")
+	require.NoError(t, err)
+
+	conn := stdlib.OpenDB(*config)
+
+	pub := NewPublisher(conn, logger)
+	sub := NewSubscriber(conn, "group", logger)
+
+	defer pub.Close()
+	defer sub.Close()
+
+	out, err := sub.Subscribe(context.Background(), topic)
+	require.NoError(t, err)
+
+	messageID := watermill.NewUUID()
+
+	require.NoError(t, pub.PublishAt(
+		topic,
+		time.Now().Add(10 * time.Second),
+		message.NewMessage(messageID, []byte("{}")),
+	))
+
+	select {
+	case <-out:
+		require.FailNow(t, "recieved message before timeout")
+	case <-time.After(10 * time.Second):
+	}
+
+	select {
+	case msg := <-out:
+		require.Equal(t, messageID, msg.UUID)
+	// there are some latency issues that need to be worked out on CRDB's side
+	case <-time.After(60 * time.Second):
+		require.FailNow(t, "did not recieve message")
+	}
+}

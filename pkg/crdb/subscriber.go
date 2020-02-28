@@ -323,12 +323,12 @@ func (s *subscriber) consume(
 			continue
 		}
 
-
-	// logger.Debug("received message", watermill.LogFields{
-	// 	"cursor": cursor,
-	// 	"message_id": msgUUID,
-	// 	"latency": time.Now().Sub(msgConsumeAfter),
-	// })
+		logger.Debug("dispatching message", watermill.LogFields{
+			"cursor": cursor,
+			"message_id": claimed.Msg.UUID,
+			"latency": time.Now().Sub(claimed.ConsumeAfter),
+			"publish_latency": time.Now().Sub(claimed.PublishedAt),
+		})
 
 		if acked := s.sendMessage(ctx, claimed, out, logger); acked {
 			result, err := s.db.ExecContext(

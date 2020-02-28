@@ -153,7 +153,7 @@ func TestConsumeAfter(t *testing.T) {
 
 	select {
 	case <-out:
-		require.FailNow(t, "recieved message before timeout")
+		require.FailNow(t, "received message before timeout")
 	case <-time.After(10 * time.Second):
 	}
 
@@ -162,6 +162,6 @@ func TestConsumeAfter(t *testing.T) {
 		require.Equal(t, messageID, msg.UUID)
 	// there are some latency issues that need to be worked out on CRDB's side
 	case <-time.After(60 * time.Second):
-		require.FailNow(t, "did not recieve message")
+		require.FailNow(t, "did not receive message")
 	}
 }

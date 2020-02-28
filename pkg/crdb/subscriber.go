@@ -258,6 +258,7 @@ func (s *subscriber) consume(
 			if err := json.Unmarshal([]byte(key.String), &ids); err != nil {
 				return err
 			}
+
 			messageID = ids[0]
 		} else {
 			var env CRDBEnvelope
@@ -326,8 +327,8 @@ func (s *subscriber) consume(
 		logger.Trace("dispatching message", watermill.LogFields{
 			"cursor":          cursor,
 			"message_id":      claimed.Msg.UUID,
-			"latency":         time.Now().Sub(claimed.ConsumeAfter),
-			"publish_latency": time.Now().Sub(claimed.PublishedAt),
+			"latency":         time.Since(claimed.ConsumeAfter),
+			"publish_latency": time.Since(claimed.PublishedAt),
 		})
 
 		if acked := s.sendMessage(ctx, claimed, out, logger); acked {

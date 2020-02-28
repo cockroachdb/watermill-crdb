@@ -24,14 +24,16 @@ func TestSubscriberMissedMessages(t *testing.T) {
 	pub := NewPublisher(conn, logger)
 	sub := NewSubscriber(conn, "group", logger)
 
+	require.NoError(t, sub.SubscribeInitialize(topic))
+
 	t.Run(topic, func(t *testing.T) {
 		t.Run("missedMessage", func(t *testing.T) {
 			missedMessageID := watermill.NewUUID()
 
-			pub.Publish(
+			require.NoError(t, pub.Publish(
 				topic,
 				message.NewMessage(missedMessageID, []byte("{}")),
-			)
+			))
 
 			tx, err := conn.BeginTx(context.Background(), nil)
 			require.NoError(t, err)
@@ -39,12 +41,15 @@ func TestSubscriberMissedMessages(t *testing.T) {
 			// Write a cursor that is after missedMessage published time
 			require.NoError(
 				t,
-				sub.SetCursor(context.Background(), tx, topic, time.Now()),
+				sub.setCursor(context.Background(), tx, topic, time.Now()),
 			)
 
 			require.NoError(t, tx.Commit())
 
-			out, err := sub.Subscribe(context.Background(), topic)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			out, err := sub.Subscribe(ctx, topic)
 			require.NoError(t, err)
 
 			select {
@@ -62,10 +67,10 @@ func TestSubscriberMissedMessages(t *testing.T) {
 			abandonedCtx, cancel := context.WithCancel(context.Background())
 			abandonedMessageID := watermill.NewUUID()
 
-			pub.Publish(
+			require.NoError(t, pub.Publish(
 				topic,
 				message.NewMessage(abandonedMessageID, []byte("{}")),
-			)
+			))
 
 			out, err := sub.Subscribe(abandonedCtx, topic)
 			require.NoError(t, err)
@@ -74,13 +79,14 @@ func TestSubscriberMissedMessages(t *testing.T) {
 			case msg := <-out:
 				require.NotNil(t, msg)
 				require.Equal(t, abandonedMessageID, msg.UUID)
-				// Don't ack the message, kill the subscriber to leave it in
-				// an abandoned state
-				cancel()
 
 			case <-time.After(5 * time.Second):
 				require.FailNow(t, "message not picked up")
 			}
+
+			// Don't ack the message, kill the subscriber to leave it in
+			// an abandoned state
+			cancel()
 
 			tx, err := conn.BeginTx(context.Background(), nil)
 			require.NoError(t, err)
@@ -88,7 +94,7 @@ func TestSubscriberMissedMessages(t *testing.T) {
 			// Write a cursor that is after abandonedMessage published time
 			require.NoError(
 				t,
-				sub.SetCursor(context.Background(), tx, topic, time.Now()),
+				sub.setCursor(context.Background(), tx, topic, time.Now()),
 			)
 
 			require.NoError(t, tx.Commit())
@@ -97,19 +103,16 @@ func TestSubscriberMissedMessages(t *testing.T) {
 			out, err = sub.Subscribe(context.Background(), topic)
 			require.NoError(t, err)
 
-			// We should recieved the abandoned message
+			// We should receive the abandoned message
 			select {
 			case msg := <-out:
 				require.NotNil(t, msg)
 				require.Equal(t, abandonedMessageID, msg.UUID)
 				msg.Ack()
 
-			case <-time.After(10 * time.Second):
+			case <-time.After(5 * time.Second):
 				require.FailNow(t, "abandoned message not picked up")
 			}
-
-			// require.NoError(t, pub.Close())
-			// require.NoError(t, sub.Close())
 		})
 	})
 

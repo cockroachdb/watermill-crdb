@@ -80,7 +80,9 @@ func TestSessionsRemoveExpiredSessions(t *testing.T) {
 	s := crdb.NewSession(conn, nil)
 	expired := crdb.NewSession(conn, nil)
 
-	go expired.Run(canceledCtx)
+	go func() {
+		_ = expired.Run(canceledCtx)
+	}()
 
 	<-expired.Start
 
@@ -94,7 +96,9 @@ func TestSessionsRemoveExpiredSessions(t *testing.T) {
 
 	_ = tx.Commit()
 
-	go s.Run(context.Background())
+	go func() {
+		_ = s.Run(context.Background())
+	}()
 
 	time.Sleep(5 * time.Second)
 

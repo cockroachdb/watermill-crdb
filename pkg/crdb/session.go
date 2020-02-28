@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
@@ -11,6 +12,7 @@ import (
 )
 
 type Session struct {
+	rw sync.Mutex
 	closed            bool
 	db                *sql.DB
 	heartbeatInterval time.Duration
@@ -38,19 +40,9 @@ func NewSession(db *sql.DB, logger watermill.LoggerAdapter) *Session {
 }
 
 func (s *Session) Run(ctx context.Context) error {
-	row := s.db.QueryRowContext(ctx, fmt.Sprintf(`
-		INSERT INTO %s(id, heartbeat, expire_at)
-		VALUES (DEFAULT, NOW()+$1, NOW()+$1)
-		RETURNING id;
-	`, s.table), s.timeOutInterval.String())
-
-	if err := row.Scan(&s.SessionID); err != nil {
-		return err
+	if err := s.init(ctx); err != nil {
+		return errors.Wrap(err, "could not initialize session")
 	}
-
-	s.logger = s.logger.With(watermill.LogFields{"session_id": s.SessionID})
-
-	close(s.Start)
 
 	for !s.closed {
 		if err := s.heartbeat(ctx); err != nil {
@@ -92,6 +84,9 @@ func (s *Session) TableName() string {
 }
 
 func (s *Session) Close() error {
+	s.rw.Lock()
+	defer s.rw.Unlock()
+
 	if s.closed {
 		return nil
 	}
@@ -110,6 +105,31 @@ func (s *Session) Close() error {
 	})
 
 	return err
+}
+
+func (s *Session) init(ctx context.Context) error {
+	s.rw.Lock()
+	defer s.rw.Unlock()
+
+	if s.SessionID != "" {
+		return errors.New("already initialized")
+	}
+
+	row := s.db.QueryRowContext(ctx, fmt.Sprintf(`
+		INSERT INTO %s(id, heartbeat, expire_at)
+		VALUES (DEFAULT, NOW(), NOW()+$1)
+		RETURNING id;
+	`, s.table), s.timeOutInterval.String())
+
+	if err := row.Scan(&s.SessionID); err != nil {
+		return err
+	}
+
+	s.logger = s.logger.With(watermill.LogFields{"session_id": s.SessionID})
+
+	close(s.Start)
+
+	return nil
 }
 
 func (s *Session) heartbeat(ctx context.Context) error {

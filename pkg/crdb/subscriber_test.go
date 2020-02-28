@@ -147,7 +147,7 @@ func TestConsumeAfter(t *testing.T) {
 
 	require.NoError(t, pub.PublishAt(
 		topic,
-		time.Now().Add(10 * time.Second),
+		time.Now().Add(10*time.Second),
 		message.NewMessage(messageID, []byte("{}")),
 	))
 

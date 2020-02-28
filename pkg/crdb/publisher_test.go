@@ -1,17 +1,17 @@
 package crdb
 
 import (
-	"fmt"
-	"testing"
 	"context"
 	"database/sql"
+	"fmt"
+	"testing"
 
+	"github.com/ThreeDotsLabs/watermill"
+	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/cockroachdb/cockroach-go/crdb"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/stdlib"
 	"github.com/stretchr/testify/require"
-	"github.com/cockroachdb/cockroach-go/crdb"
-	"github.com/ThreeDotsLabs/watermill"
-	"github.com/ThreeDotsLabs/watermill/message"
 )
 
 func TestPublishDB(t *testing.T) {

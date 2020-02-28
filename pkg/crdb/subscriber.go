@@ -53,6 +53,7 @@ func NewSubscriber(db *sql.DB, consumerGroup string, logger watermill.LoggerAdap
 		consumerGroup: consumerGroup,
 	}
 }
+
 // SubscribeInitialize implements message.SubscribeInitializer
 func (s *subscriber) SubscribeInitialize(topic string) error {
 	ctx := context.Background()
@@ -150,7 +151,7 @@ func (s *subscriber) Subscribe(ctx context.Context, topic string) (<-chan *messa
 		err := s.consume(ctx, rows, topic, session, out, logger)
 
 		logger.Debug("subscription closed", watermill.LogFields{
-			"err":    err,
+			"err": err,
 		})
 
 		// swallow errors if ctx has been canceled
@@ -236,7 +237,7 @@ func (s *subscriber) consume(
 
 	for rows.Next() {
 		var (
-			key sql.NullString
+			key   sql.NullString
 			table sql.NullString
 			value string
 
@@ -247,7 +248,6 @@ func (s *subscriber) consume(
 		if err := rows.Scan(&table, &key, &value); err != nil {
 			return err
 		}
-
 
 		// Is this a resolve timestamp or an actual change?
 		isChange := table.Valid
@@ -297,10 +297,10 @@ func (s *subscriber) consume(
 			claimed, err = s.claimMessage(ctx, session, tx, topic, missed[0])
 
 			logger.Debug("found missed messages", watermill.LogFields{
-				"cursor": cursor,
-				"ids": missed,
+				"cursor":  cursor,
+				"ids":     missed,
 				"claimed": claimed,
-				"err": err,
+				"err":     err,
 			})
 
 			return err
@@ -324,9 +324,9 @@ func (s *subscriber) consume(
 		}
 
 		logger.Trace("dispatching message", watermill.LogFields{
-			"cursor": cursor,
-			"message_id": claimed.Msg.UUID,
-			"latency": time.Now().Sub(claimed.ConsumeAfter),
+			"cursor":          cursor,
+			"message_id":      claimed.Msg.UUID,
+			"latency":         time.Now().Sub(claimed.ConsumeAfter),
 			"publish_latency": time.Now().Sub(claimed.PublishedAt),
 		})
 
@@ -344,7 +344,7 @@ func (s *subscriber) consume(
 			rowsAffected, _ := result.RowsAffected()
 
 			logger.Trace("acked message", watermill.LogFields{
-				"internal_id":    claimed.ID,
+				"internal_id":   claimed.ID,
 				"message_id":    claimed.Msg.UUID,
 				"rows_affected": rowsAffected,
 				"cursor":        cursor,

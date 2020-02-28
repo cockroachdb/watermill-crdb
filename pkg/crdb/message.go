@@ -1,8 +1,8 @@
 package crdb
 
 import (
-	"time"
 	"encoding/json"
+	"time"
 
 	"github.com/ThreeDotsLabs/watermill/message"
 )
@@ -12,18 +12,18 @@ type Scanner interface {
 }
 
 type messageRow struct {
-	ID string
-	PublishedAt time.Time
+	ID           string
+	PublishedAt  time.Time
 	ConsumeAfter time.Time
-	Msg *message.Message
+	Msg          *message.Message
 }
 
 func scanMessage(row Scanner) (messageRow, error) {
 	var (
 		internal messageRow
-		meta string
-		payload []byte
-		uuid string
+		meta     string
+		payload  []byte
+		uuid     string
 	)
 
 	if err := row.Scan(

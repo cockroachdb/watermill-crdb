@@ -12,7 +12,7 @@ import (
 )
 
 type Session struct {
-	rw sync.Mutex
+	rw                sync.Mutex
 	closed            bool
 	db                *sql.DB
 	heartbeatInterval time.Duration

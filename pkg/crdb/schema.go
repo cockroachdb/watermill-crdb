@@ -8,7 +8,6 @@ import (
 	"github.com/ThreeDotsLabs/watermill"
 )
 
-const sessionTable = `"watermill_sessions"`
 const cursorsTable = `"watermill_subscriber_cursors"`
 
 func InitializeSessionSchema(ctx context.Context, db *sql.DB) error {
@@ -22,7 +21,9 @@ func InitializeSessionSchema(ctx context.Context, db *sql.DB) error {
 	return err
 }
 
-func InitializeMessageSchema(ctx context.Context, db *sql.DB, topic string, logger watermill.LoggerAdapter) error {
+func InitializeMessageSchema(
+	ctx context.Context, db *sql.DB, topic string, logger watermill.LoggerAdapter,
+) error {
 	if err := validateTopicName(topic); err != nil {
 		return err
 	}
@@ -46,7 +47,13 @@ func InitializeMessageSchema(ctx context.Context, db *sql.DB, topic string, logg
 	return err
 }
 
-func InitializeClaimsSchema(ctx context.Context, db *sql.DB, topic string, consumerGroup string, logger watermill.LoggerAdapter) error {
+func InitializeClaimsSchema(
+	ctx context.Context,
+	db *sql.DB,
+	topic string,
+	consumerGroup string,
+	logger watermill.LoggerAdapter,
+) error {
 	query := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		message_id UUID PRIMARY KEY NOT NULL REFERENCES %s,
 		session_id UUID NOT NULL,
@@ -62,7 +69,9 @@ func InitializeClaimsSchema(ctx context.Context, db *sql.DB, topic string, consu
 	return err
 }
 
-func InitializeCursorsSchema(ctx context.Context, db *sql.DB, logger watermill.LoggerAdapter) error {
+func InitializeCursorsSchema(
+	ctx context.Context, db *sql.DB, logger watermill.LoggerAdapter,
+) error {
 	// Enabled Changefeeds
 	if _, err := db.ExecContext(ctx, `SET CLUSTER SETTING kv.rangefeed.enabled = true;`); err != nil {
 		return err

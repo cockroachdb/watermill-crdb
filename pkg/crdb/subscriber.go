@@ -165,7 +165,9 @@ func (s *subscriber) Subscribe(ctx context.Context, topic string) (<-chan *messa
 	return out, nil
 }
 
-func (s *subscriber) setCursor(ctx context.Context, tx *sql.Tx, topic string, cursor time.Time) error {
+func (s *subscriber) setCursor(
+	ctx context.Context, tx *sql.Tx, topic string, cursor time.Time,
+) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s(topic, consumer_group, cursor)
 		VALUES ($1, $2, $3)
@@ -194,7 +196,9 @@ func (s *subscriber) cursor(ctx context.Context, tx *sql.Tx, topic string) (time
 
 // missedMessageIDs returns a slice of internal ids of all non-acked non-claimed messages
 // that should have been proccessed before cursor
-func (s *subscriber) missedMessageIDs(ctx context.Context, session *Session, tx *sql.Tx, topic string, cursor time.Time) ([]string, error) {
+func (s *subscriber) missedMessageIDs(
+	ctx context.Context, session *Session, tx *sql.Tx, topic string, cursor time.Time,
+) ([]string, error) {
 	query := fmt.Sprintf(`SELECT msg.id FROM %s msg
 		LEFT JOIN %s claim ON claim.message_id = msg.id
 		WHERE msg.consume_after <= $1
@@ -356,7 +360,9 @@ func (s *subscriber) consume(
 	return rows.Err()
 }
 
-func (s *subscriber) claimMessage(ctx context.Context, session *Session, tx *sql.Tx, topic string, messageID string) (*messageRow, error) {
+func (s *subscriber) claimMessage(
+	ctx context.Context, session *Session, tx *sql.Tx, topic string, messageID string,
+) (*messageRow, error) {
 	query := fmt.Sprintf(`SELECT msg.id, msg.published_at, msg.consume_after, msg.message_id, msg.payload, msg.meta FROM
 	%s msg
 	LEFT JOIN %s ack ON ack.message_id = msg.id
@@ -399,10 +405,7 @@ func (s *subscriber) claimMessage(ctx context.Context, session *Session, tx *sql
 }
 
 func (s *subscriber) sendMessage(
-	ctx context.Context,
-	row *messageRow,
-	out chan *message.Message,
-	logger watermill.LoggerAdapter,
+	ctx context.Context, row *messageRow, out chan *message.Message, logger watermill.LoggerAdapter,
 ) (acked bool) {
 	msg := row.Msg
 

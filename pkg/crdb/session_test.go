@@ -25,7 +25,7 @@ func TestNewSession(t *testing.T) {
 }
 
 func TestSessionRun(t *testing.T) {
-	config, err := pgx.ParseConfig("postgres://root@localhost:43430/defaultdb?sslmode=disable")
+	config, err := pgx.ParseConfig(crdb.PGURL)
 	require.NoError(t, err)
 
 	conn := stdlib.OpenDB(*config)
@@ -70,7 +70,7 @@ func TestSessionRun(t *testing.T) {
 }
 
 func TestSessionsRemoveExpiredSessions(t *testing.T) {
-	config, err := pgx.ParseConfig("postgres://root@localhost:43430/defaultdb?sslmode=disable")
+	config, err := pgx.ParseConfig(crdb.PGURL)
 	require.NoError(t, err)
 
 	conn := stdlib.OpenDB(*config)

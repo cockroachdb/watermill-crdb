@@ -18,7 +18,7 @@ func TestPublishDB(t *testing.T) {
 	topic := watermill.NewUUID()
 	logger := watermill.NewStdLogger(true, testing.Verbose())
 
-	config, err := pgx.ParseConfig("postgres://root@localhost:43430/defaultdb?sslmode=disable")
+	config, err := pgx.ParseConfig(PGURL)
 	require.NoError(t, err)
 
 	conn := stdlib.OpenDB(*config)
@@ -47,7 +47,7 @@ func TestPublishTx(t *testing.T) {
 	topic := watermill.NewUUID()
 	logger := watermill.NewStdLogger(true, testing.Verbose())
 
-	config, err := pgx.ParseConfig("postgres://root@localhost:43430/defaultdb?sslmode=disable")
+	config, err := pgx.ParseConfig(PGURL)
 	require.NoError(t, err)
 
 	conn := stdlib.OpenDB(*config)

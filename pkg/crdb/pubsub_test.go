@@ -13,7 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func PubSubConstructor(t *testing.T, conn *sql.DB, consumerGroup string) (message.Publisher, message.Subscriber) {
+func PubSubConstructor(
+	t *testing.T, conn *sql.DB, consumerGroup string,
+) (message.Publisher, message.Subscriber) {
 	logger := watermill.NewStdLogger(true, testing.Verbose())
 
 	publisher := crdb.NewPublisher(conn, logger)
@@ -23,7 +25,7 @@ func PubSubConstructor(t *testing.T, conn *sql.DB, consumerGroup string) (messag
 }
 
 func TestWatermillUniversal(t *testing.T) {
-	config, err := pgx.ParseConfig("postgres://root@localhost:43430/defaultdb?sslmode=disable")
+	config, err := pgx.ParseConfig(crdb.PGURL)
 	require.NoError(t, err)
 
 	conn := stdlib.OpenDB(*config)

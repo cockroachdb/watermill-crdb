@@ -11,6 +11,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const sessionTable = `"watermill_sessions"`
+
 type Session struct {
 	rw                sync.Mutex
 	closed            bool
